@@ -1,0 +1,362 @@
+MongoDB Aggregation Pipeline Questions and answers
+
+===> How many users are active? (active is a field of the data given which is a boolean data type)
+[
+  // stage 1
+  {
+    $match: {
+      isActive: true // picks up all the data entries where isActive field is true.
+    }
+  },
+  // stage 2
+  {
+    $count: 'activeUsers' // gives count of active users.
+  }
+]
+
+===> what is average age of all users? (field "age" present in data)
+
+grouping users based on gender
+[
+  {
+    $group: {
+      _id: "$fieldName", // provide field name with "$" dollar sign if in need of access.
+      averageAge: {
+          $avg: "$age"
+      }
+    }
+  }
+]
+_id: "$gender" --> grouping based on gender
+_id: "$age" ---> grouping based on age
+_id: null ---> grouping under one single document, instead of making different documents.
+averageAge: {
+  $avg: "$age"
+}
+above gives average age amongst all ages after grouping the users based on given field in _id
+$avg ---> accumulator
+$avg: "$age" ---> avg calculated based on age.
+ouput is: averageAge: <avgAgeNumber>
+
+===> list top 5 most common favorite fruits among users ? (field name favoriteFruit present in database)..
+// example: group users based on fruit names, now while checking any fruit list for ex. apple, if you find user in apple category, add "1" to apple's sum.
+// similarly to banana and other fruits as well.
+// sum gets stored in count fieldName
+// sort it using "$sort"
+// use "$limit" to display how many fruit's sum you want.
+[
+  {
+    $group: {
+      _id: "$favoriteFruit",
+      count: {
+      	$sum: 1 
+      }
+    }
+  },
+  {
+    $sort: {
+      count: -1 // count: -1 ---> descending order, count: 1 ---> ascending order.
+    }
+  }
+  {
+    $limit: <top n list>  // 5--> top 5 fruits, 3--> top 3 fruits
+  }
+]
+
+===> find total number of males and females? (gender fieldName)
+-> can be done by grouping on basis of gender and then using "$sum" accumulator.
+same as done above with fruits.
+
+===> which country has highest number of registered users? 
+(country fieldName present inside = company --> location --> country,address)
+task: how to drill down from company to country
+"$company.location.country"
+---> first group on basis of country "$company.location.country"
+---> then use $sum to count number of users in each country group
+---> $sort --> countryCount: -1,  these sums in descending order
+---> use $limit: 1 to display only the country with highest number of users.
+[
+  {
+    $group: {
+      _id: "$company.location.country",
+      countryCount: {
+        $sum: 1
+      }
+    }
+  },
+  {
+    $sort: {
+      countryCount: -1
+    }
+  },
+  {
+    $limit: 1
+  }
+]
+
+
+====> list all unique eye colors present in the collection. (eyeColor is a fieldName)
+group all values based on eyeColor fieldName using $group and _id: "$eyeColor"
+
+====> what is average number of tags per user? 
+$unwind operator:
+there is one user, and in the array there are 3 elements ---> $unwind creates three docs for that user ---> 1st user will have 1st value and same with others.
+the id of the user remain same, but the only property that changes is the array value.
+
+there is an array users with 10 elements ---> $unwind will create 10 values with same id under the same array users.
+[
+  {
+    $unwind: {
+      path: "$tags",
+    }
+  }
+]
+same user being duplicates with different tag names like "enim", "id" etc...
+
+[
+  {
+    $unwind: {
+      path: "$tags", 
+    }
+  },
+  // grouping based on ids and counting how many tags are present for each unique id.
+  {
+    $group: {
+      _id: "$_id", 
+      numberOfTags: {
+        $sum: 1
+      }
+    }
+  },
+  // grouping as single doc and finding average tags.
+  {
+    $group: {
+      _id: null,
+      averageTags: {
+        $avg: "$numberOfTags"
+      }
+    }
+  }
+]
+
+adds new fields to documents....
+$addFields: {
+  newField: expression, ...
+}
+
+same question different solution ---> 2 step pipeline
+[
+  {
+    $addFields: {
+      numberOfTags: {
+        // if size is null then treat it as empty array
+        $size: {$ifNull: ["$tags", []]}
+      }
+    }
+  },
+  {
+    $group: {
+      _id: null,
+      averageNumberOfTags: {$avg: "$numberOfTags"}
+    }
+  }
+]
+
+$count ---> returns count of number of documents at this stage of aggregation pipeline
+
+====> finding number of users with a specific tag like enim, id, velit, ad, consequat etc ?
+
+$match ---> filters the documents to pass only documents that match specified conditions to next pipeline stage.
+syntax --> { $match: { <query> } }
+
+find how many users have "enim" as one of their tag and return the count?
+[
+  {
+    $match: {
+      tags: "enim"
+    }
+  },
+  {
+    $count: 'userWithEnimTag'
+  }
+]
+userWithEnimTag ---> just a variable kind of object which stores the result
+
+__________________________________________________________________________________________________________________________________________________________________________________________
+
+====> what are the names and age of users who are inactive and have 'velit' as a tag?
+need fields names and ages of users who are inactive(isActive: false) and velit as a tag.
+
+$project --> pass along the docs with requested fields to next stage in pipeline. the specified fields can be existing fields from input docs or newly computed fields.
+syntax: { $project: { <specification(s)> } }
+
+[
+  {
+    $match: {
+      isActive: false, 
+      tags: "velit"
+    }
+  },
+  {
+    $project: {
+      name: 1, 
+      age: 1,
+    }
+  }
+]
+__________________________________________________________________________________________________________________________________________________________________________________________
+
+====> how many users have a phone number starting with "+1 (940)" ?
+num location = company ---> phone
+[
+  {
+    $match: {
+      "company.phone": /^\+1 \(940\)/  // regex expression
+    }
+  },
+  {
+    $count: 'userWithSpecialPhoneNumber'
+  }
+]
+__________________________________________________________________________________________________________________________________________________________________________________________
+
+====> who has registered most recently and display with name register info and favFruit
+limit set to 4, most recent 4 users who registered recently
+[
+  {
+    $sort: {
+      registered: -1
+    }
+  },
+  {
+    $limit: 4
+  },
+  {
+    $project: {
+      name: 1,
+      registered: 1,
+      favoriteFruit: 1
+    }
+  }
+]
+__________________________________________________________________________________________________________________________________________________________________________________________
+
+====> Categorize user by favFruit
+
+$push ---> appends specified value to an array.
+values to pushed to array called "newArrayName"
+syntax---> newArrayName: { $push: { <field1>: <value1>, ... } }
+
+[
+  {
+    $group: {
+      _id: "$favoriteFruit",
+      users: {
+        $push: "$name"
+      }
+    }
+  }
+]
+
+__________________________________________________________________________________________________________________________________________________________________________________________
+
+How many users have "ad" as the second tag in their list of tags? (list numbering starts from 0)
+
+[
+  {
+    $match: {
+      "tags.1": "ad",
+    }
+  },
+  {
+    $count: 'secondTagAd'
+  }
+]
+__________________________________________________________________________________________________________________________________________________________________________________________
+
+===> find users who have both "enim" and "id" as their tags
+
+$all ---> selects the documents where the value of field is an array that contains all specified elements.
+syntax : { <field>: { $all: [ <value1> , <value2> ...] } }
+
+[
+  {
+    $match: {
+      tags: {
+        $all: ["enim", "id"],
+      },
+    },
+  },
+]
+
+
+====> list all companies located in USA with their corresponding user count? 
+
+[
+  {
+    $match: {
+      "company.location.country": "USA"
+    }
+  },
+  {
+    $group: {
+      _id: "$company.title",
+      userCount: {
+        $sum: 1
+      }
+    }
+  }
+]
+__________________________________________________________________________________________________________________________________________________________________________________________
+LOOKUP Scenario:
+
+$lookup: {
+      from: collection, // from which collection i wanna lookup data
+      localField: field, // current field where you are
+      foreignField: field, // where that field exactly match
+      as: result
+}
+
+we have three collections authors, books, users
+for books, _id of authors is the foreign field
+
+in books aggregation pipeline
+[
+  {
+    $lookup: {
+      from: "authors",
+      localField: "author_id",
+      foreignField: "_id",
+      as: "author_details"
+    }
+  },
+  {
+    $addFields: {
+      author_details: {
+        $first: "$author_details"
+      }
+    }
+  }
+]
+
+alternative:
+
+[
+  {
+    $lookup: {
+      from: "authors",
+      localField: "author_id",
+      foreignField: "_id",
+      as: "author_details"
+    }
+  },
+  {
+    $addFields: {
+      author_details: {
+        $arrayElemAt: ["$author_details", 0]
+      }
+    }
+  }
+]
+
+
